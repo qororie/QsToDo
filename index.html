@@ -1,0 +1,1961 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+
+  <!-- PWAのためにService Worker を登録する -->
+  <script>
+    // Service Worker に対応しているブラウザかどうか確認する
+    if ('serviceWorker' in navigator) {
+      // ページが読み込まれたあとに登録する
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(() => {
+            console.log('Service Worker Registration successful！')
+          })
+          .catch(err => {
+            console.log('Service Worker Registration failed:', err)
+          })
+      })
+    }
+  </script>
+
+  <!-- Androidの一部の端末では initial-scale=1.0 だけでは正しくスケールされないことがあるためminimumとmaximumも設定 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0">
+  
+  <title>QsToDo</title>
+    <!-- ファビコン設定 -->
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+
+    <!-- PWA設定ファイルの読み込み -->
+    <link rel="manifest" href="./manifest.json">
+
+    <!-- iOSのホーム画面追加用の設定 -->
+    <!-- apple-mobile-web-app-capable → iOSでアプリっぽく動かす -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <!-- apple-mobile-web-app-status-bar-style → ステータスバーの色 -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <!-- apple-mobile-web-app-title → ホーム画面のアイコン下の名前 -->
+    <meta name="apple-mobile-web-app-title" content="ToDo">
+    <!-- apple-touch-icon → iOSのホーム画面アイコン -->
+    <link rel="apple-touch-icon" href="./icon.png">
+      
+    <!-- Material Symbols フォントの読み込み -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+    />
+
+  <style>
+    /* Material Symbolsアイコンの基本スタイル */
+    .material-symbols-outlined {
+      font-size: 20px;              /* アイコンサイズ */
+      vertical-align: middle;       /* テキストと上下中央を揃える */
+      line-height: 1;
+      user-select: none;            /* アイコン文字が選択されないようにする */
+      /* アイコンの見た目を細かく制御 */
+      font-variation-settings:      
+        "FILL" 0,   /* 0 = アウトライン, 1 = 塗りつぶし */
+        "wght" 400, /* 太さ */
+        "GRAD" 0,   /* グラデーション */
+        "opsz" 20;  /* 最適表示サイズ */
+    }
+
+  /* =============================================
+  配色
+  ============================================= */
+  :root {
+    --a: #F23A30;
+    --b: #FAFAFA;
+    --d: #56a09b;
+    --e: #71752B;
+    --f: #191919;
+    --g: #F5F2E4;
+}
+
+
+    /* =============================================
+       リセット・基本設定
+       ============================================= */
+
+    * { box-sizing: border-box; }
+    body { background: var(--g); margin: 0; }
+
+    /* padding-top はVueで動的に変えるのでCSSからは消す */
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      /* padding-top: 140px; ← この行を消す！ */
+      padding: 0 16px 90px;  /* 上の余白だけ消す */
+      font-family: sans-serif;
+    }
+
+
+    /* =============================================
+       上部固定エリア
+       ============================================= */
+
+    .top-fixed {
+      position: fixed;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 1000px;
+      background: var(--g);
+      padding: 12px 16px 8px;
+      border-bottom: 2px solid var(--e);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+    }
+
+    /* 言語切替と入出力ボタンを1行に */
+    .top-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    /* 言語切替（左側） */
+    .lang-switch { display: flex; gap: 8px; }
+
+    /* 入出力ボタン（右側） */
+    .io-bar { display: flex; gap: 8px; }
+
+    /* 言語・入出力ボタン共通スタイル */
+    .lang-switch button,
+    .io-btn {
+      background: transparent;
+      color: var(--e);
+      border: 1px solid var(--e);
+      padding: 3px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .lang-switch button:hover,
+    .io-btn:hover { color: var(--f); border-color: var(--f); }
+
+    /* 言語選択中のボタン */
+    .lang-switch button.active {
+      background: var(--e);
+      color: var(--g);
+      border-color: var(--e);
+    }
+
+    /* 検索欄と＋ボタンを横に並べる行 */
+    .top-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    /* 検索・追加兼用の入力欄 */
+    .search-input {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid var(--e);
+      border-radius: 10px;
+      font-size: 15px;
+      background: var(--g);
+      outline: none;
+    }
+    .search-input.searching {
+      border-color: var(--e);
+      background: var(--g);
+    }
+    .search-input:focus { border-color: var(--f); }
+    .search-input.searching:focus { border-color: var(--e); }
+
+    /* ＋と×を切り替えるボタン */
+    .toggle-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      border: none;
+      background: var(--a);
+      color: var(--g);
+      font-size: 20px;
+      cursor: pointer;
+      flex-shrink: 0;
+      padding: 0;
+    }
+    .toggle-btn.open { background: var(--e); }
+
+    /* 件数表示 */
+    .search-status {
+      font-size: 11px;
+      color: var(--g);
+      margin-bottom: 4px;
+      padding-left: 2px;
+    }
+    .search-status.is-searching { color: var(--a); }
+
+
+    /* =============================================
+       タスク追加フォーム
+       ============================================= */
+
+    .input-area {
+      background: #fff;
+      border: 1px solid var(--e);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* 期日ラベルと入力欄を横並びにする */
+    .date-row { display: flex; align-items: center; gap: 8px; }
+    .date-label { font-size: 13px; color: var(--e); flex-shrink: 0; }
+    .date-row input { flex: 1; width: auto; }
+
+    /* カテゴリ候補のドロップダウン */
+    .category-input-active {
+      border-color: var(--e) !important;
+      border-bottom-left-radius: 0 !important;
+      border-bottom-right-radius: 0 !important;
+      border-bottom: none !important;
+    }
+    .category-dropdown-label {
+      font-size: 11px;
+      color: var(--f);
+      padding: 5px 12px 4px;
+      background: var(--g);
+      border: 1px solid var(--e);
+    }
+    .category-dropdown {
+      background: (--g);
+      border: 1px solid var(--e);
+      border-top: none;
+      border-bottom-left-radius: 10px;
+      border-bottom-right-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 4px;
+    }
+    .category-option {
+      padding: 10px 12px;
+      font-size: 14px;
+      cursor: pointer;
+      border-bottom: 2px solid var(--e);
+      color: var(--e);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .category-option:last-child { border-bottom: none; }
+    .category-option:hover { background: var(--g); }
+
+
+    /* =============================================
+       ボタン・入力欄の共通スタイル
+       ============================================= */
+
+    /* タスク入力欄（textarea） */
+    .todo-textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--e);
+      border-radius: 10px;
+      font-size: 15px;
+      background: var(--b);
+      outline: none;
+      /* 縦方向だけリサイズ可能にする.iPhoneでは縦リサイズきかない。 */
+      resize: vertical;
+      /* フォントをページと合わせる */
+      font-family: sans-serif;
+      /* 最小の高さ */
+      min-height: 44px;
+      line-height: 1.5;
+    }
+
+    /* :not([type="checkbox"]) → チェックボックスには適用しない */
+    input:not([type="checkbox"]) {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--e);
+      border-radius: 10px;
+      font-size: 15px;
+      background: var(--b);
+      outline: none;
+    }
+    input:focus { border-color: var(--f); }
+
+    /* チェックボックスにチェックが入ったときの色 */
+    .cb {
+      accent-color: var(--a);
+    }
+
+
+    button {
+      padding: 10px 16px;
+      border: 1px solid var(--d);
+      border-color: var(--e);
+      border-radius: 10px;
+      font-size: 13px;
+      cursor: pointer;
+      color: var(--f);
+      background-color: var(--b);
+      /* 最小の高さと幅 */
+      min-height: 28px;
+      min-width: 28px;
+      /* 最大の高さと幅 */
+      max-height： 36px
+      max-width: 120px;
+    }
+    button:active { opacity: 0.7; }
+
+    /* ボタンを横並びにする共通クラス */
+    .btn-row { 
+      display: flex;           /* ボタンを均等な幅に広げる */
+      gap: 8px;                /* ボタンの間隔 */
+      justify-content: center; /* 中央寄せ */
+    } 
+  .btn-row button {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;   /* アイコン上・テキスト下（全ボタン共通） */
+    gap: 2px;                 /* アイコンとテキストの間隔は2px（狭めでOK） */
+    padding: 6px 4px;
+    font-size: 11px;          /* 小サイズ */
+    max-width: 120px;         /* PCで広がりすぎない */
+  }
+
+    /* btn-row 内のアイコンサイズ */
+    .btn-row .material-symbols-outlined {
+      font-size: 20px;
+    }
+
+    /* 色別ボタン */
+    .cancel-btn { color: var(--e) !important; }
+    .delete-btn { color: var(--a) !important; }
+    .copy-btn   { color: var(--d) !important; }
+
+    /* 追加ボタン：一番重要なので目立たせる */
+    .add-btn {
+      flex: 2;                  /* 戻るボタンの2倍の幅 */
+      background: var(--e);     /* 濃い緑背景 */
+      color: var(--b);          /* 白文字 */
+      border-color: var(--e);   /* 枠も濃い緑 */
+    }
+
+    /* 追加フォームの戻るボタン */
+    .cancel-add-btn {
+      flex: 1;                  /* 普通サイズ */
+      background: var(--g);     /* クリーム背景 */
+      color: var(--e);          /* 濃い緑文字 */
+      border-color: var(--e);   /* 枠も濃い緑 */
+    }
+
+    /* =============================================
+       ToDoカード
+       ============================================= */
+    /* 期限切れてないToDoカード */
+    .todo-card {
+      background: var(--g);
+      border:1px solid var(--e);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+    /* 期限切れカードは枠を赤にする */
+    .todo-card.overdue {
+      border-color: var(--a); 
+    }
+    /* 編集中のカードは枠をつける */
+    .todo-card.editing {
+      border: 1px solid var(--e);
+      cursor: default;
+    }
+
+    /* カード内の横並びレイアウト */
+    .card-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    /* カード左側（チェックボックス＋テキスト） */
+    .card-left {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* カード右側（編集・削除・コピーボタン） */
+    .card-right {
+      display: flex;  /* ← ボタンを横並びにする */
+      gap: 4px; /* ← 幅が狭くても縮まないようにする */
+      flex-shrink: 0;
+    }
+ 
+    /* カード右側のボタン共通 */
+    .card-right button {
+      padding: 4px 6px;
+      /* アイコンと同じ行の高さに揃える */
+      line-height: 1;
+      /* ボタン内のアイコンを中央揃えにする */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      color: var(--g);
+    }
+
+    .card-right button:first-child {
+      color: var(--f);
+    }
+
+    /* カード右側のアイコンサイズ調整 */
+    /* .card-right の中の .material-symbols-outlined だけに適用する */
+    .card-right .material-symbols-outlined {
+      font-size: 14px;
+    }
+
+    /* タスクのテキスト＋タグエリア（横並び・折り返しあり） */
+    .todo-text-area {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .todo-main-text {
+      font-size: 15px;
+      color: var(--f);
+      word-break: break-word;
+      line-height: 1.4;
+    }
+    .todo-main-text.done {
+      text-decoration: line-through;
+      color: var(--e);
+    }
+
+    /* 完了済みカードは枠を薄くする（期限切れより優先される） */
+    .todo-card.done {
+      border-color: var(--e);
+      opacity: 0.4; /* 薄くして目立たせない */
+    }
+
+    /* カテゴリ・期日のタグエリア */
+    .todo-tags {
+      font-size: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-left: 6px;
+    }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+    .tag-category { background: var(--e); color: var(--g); }
+    .tag-date     { background: var(--d); color: var(--g); }
+    .tag-date.overdue { background: var(--a); color: var(--g); }
+
+    /* 編集モードの縦並びレイアウト */
+    .edit-inputs {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* 編集モードのボタンだけアイコン上・テキスト下のレイアウトにする */
+    .edit-inputs .btn-row button {
+      flex-direction: column; /* アイコンとテキストを縦並びにする */
+      gap: 2px;
+      padding: 6px 4px;
+      font-size: 10px;
+    }
+
+    /* 編集モードのアイコンサイズ */
+    .edit-inputs .btn-row .material-symbols-outlined {
+      font-size: 20px;
+    }
+
+    /* 更新ボタン：一番重要なので目立たせる */
+    .edit-inputs .btn-row button:first-child {
+      flex: 2;
+      background: var(--e);
+      color: var(--b);
+      border-color: var(--e);
+    }
+
+    /* 戻るボタン */
+    .edit-inputs .btn-row .cancel-btn {
+      flex: 1.5;
+      background: var(--g);     /* クリーム背景 */
+      color: var(--e);          /* 濃い緑文字 */
+      border-color: var(--e);   /* 枠も濃い緑 */
+    }
+
+    /* 削除ボタン */
+    .edit-inputs .btn-row .delete-btn {
+      flex: 1.5;
+      background: var(--g);     /* クリーム背景 */
+      color: var(--a);          /* 赤文字 */
+      border-color: var(--a);   /* 枠も赤 */
+    }
+
+    /* コピーボタン：補助機能なので小さめ */
+    .edit-inputs .btn-row .copy-btn {
+      flex: 1;
+      background: var(--g);     /* クリーム背景 */
+      color: var(--d);          /* 青緑文字 */
+      border-color: var(--d);   /* 枠も青緑 */
+    }
+
+    /* =============================================
+       カード追加・削除のフェードアニメーション(VUEの機能で実装)
+    ============================================= */
+
+    .todo-fade-enter-active {
+      transition: opacity 0.3s; /* 追加時：0.3秒でふわっと出る */
+    }
+    .todo-fade-leave-active {
+      transition: opacity 0.3s; /* 削除時：0.3秒でふわっと消える */
+    }
+    .todo-fade-enter-from,
+    .todo-fade-leave-to {
+      opacity: 0; /* 開始・終了時は透明 */
+    }
+
+    /* =============================================
+       グループ表示
+       ============================================= */
+
+    .group-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 4px 8px;
+      cursor: pointer;
+      border-bottom: 1.5px solid var(--e);
+      margin-top: 12px;
+      margin-bottom: 8px;
+    }
+    .group-header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .group-title { font-size: 14px; font-weight: bold; color: var(--e); }
+    .group-count { font-size: 12px; color: var(--e); margin-left: 6px; }
+    .group-arrow { font-size: 12px; color: var(--e); transition: transform 0.2s; }
+    .group-arrow.closed { transform: rotate(-90deg); }
+
+
+    /* =============================================
+       下部固定エリア
+       ============================================= */
+
+    .bottom-bar {
+      position: fixed;
+      bottom: 0;
+      left: 50%;                      /* 左端を中央に */
+      transform: translateX(-50%);    /* 中央寄せ */
+      width: 100%;                    /* 横幅いっぱい */
+      max-width: 1000px;              /* 上部と同じ最大幅 */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 16px 16px;
+      background: var(--g);
+      border-top: 2px solid var(--e);
+      backdrop-filter: blur(8px);
+      gap: 10px;
+    }
+    .bottom-label {
+      font-size: 10px;
+      color: var(--e);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .bottom-buttons { display: flex; gap: 6px; }
+    .bottom-bar button {
+      padding: 6px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--e);
+      background: var(--g);
+      color: var(--e);
+      font-size: 13px;
+    }
+    .bottom-bar button.active {
+      background: var(--a);
+      color: var(--b);
+      border-color: var(--a);
+    }
+
+
+    /* =============================================
+       トースト通知
+       ============================================= */
+
+    .toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--f);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      white-space: nowrap;
+      z-index: 1000;
+      opacity: 1;
+      transition: opacity 0.4s;
+    }
+    .toast.toast-hide { opacity: 0; }
+
+  /* 普段はメッセージを隠しておく */
+  .rotate-message { display: none; }
+
+  /* スマホ横向きのときだけ */
+  @media (orientation: landscape) and (max-height: 500px) {
+    /* アプリを隠す */
+    #app { display: none; }
+    /* メッセージを表示する */
+    .rotate-message {
+      display: flex;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+      background: var(--G);
+      font-family: sans-serif;
+      font-size: 16px;
+      color: var(--e);
+      text-align: center;
+      padding: 24px;
+    }
+    .rotate-message .rotate-icon { font-size: 48px; }
+  }
+  </style>
+</head>
+
+<body>
+
+  <!-- 横向きのときに表示するメッセージ（#appの外に置く） -->
+  <div class="rotate-message">
+    <div class="rotate-icon">📱</div>
+  <!-- 日本語と英語を両方ベタ書きする -->
+  <div>縦向きでご利用ください</div>
+  <div style="font-size:13px; color:#aaa;">Please use in portrait mode</div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+  #app
+  　└── .container（padding-topを動的に管理
+        　├── .top-fixed（上部固定）
+        　├── .input-area（追加フォーム・v-ifで表示制御）
+        　├── v-if="groupBy === 'none'"（一覧モード）
+        　├── v-else（グループモード）
+        　├── .toast（トースト通知）
+        　└── .bottom-bar（下部固定）
+  ══════════════════════════════════════ -->
+  <div id="app">
+
+    <!-- ↓ padding-top をVueで動的に変える（ヘッダーの高さ + 余白12px）-->
+    <div class="container" :style="{ paddingTop: (topHeight + 12) + 'px' }">
+
+      <!-- ══════════════════════════════════════
+          上部固定エリア（スクロールしても常に上に固定）
+          ══════════════════════════════════════ -->
+      <div class="top-fixed">
+
+        <!-- 言語切替（左）・入出力ボタン（右）を1行に -->
+        <div class="top-actions">
+
+          <!-- 言語切替ボタン -->
+          <div class="lang-switch">
+            <button type="button" @click="currentLang = 'ja'" :class="{ active: currentLang === 'ja' }">ja</button>
+            <button type="button" @click="currentLang = 'en'" :class="{ active: currentLang === 'en' }">en</button>
+          </div>
+
+          <!-- CSV・JSON出力・取込ボタン -->
+          <div class="io-bar">
+            <button type="button" class="io-btn" @click="exportCSV">CSV</button>
+            <button type="button" class="io-btn" @click="exportJSON">JSON</button>
+            <button type="button" class="io-btn" @click="triggerImport">{{ t.importFile }}</button>
+            <!-- ファイル選択は非表示のinputで処理する -->
+            <!-- accept → 選べるファイルの種類を制限する -->
+            <input
+              type="file"
+              ref="importFile"
+              accept=".csv,.json"
+              style="display:none"
+              @change="importFile"
+            >
+          </div>
+
+        </div><!-- /.top-actions -->
+
+        <!-- 検索欄と＋ボタンを横に並べる -->
+        <div class="top-row">
+          <input
+            class="search-input"
+            :class="{ searching: searchText.trim() }"
+            v-model="searchText"
+            :placeholder="t.placeholderSearch"
+            @keyup.enter="onSearchEnter"
+            @focus="cancelEditIfNeeded"
+          >
+          <!-- showInput が true のとき × 、false のとき ＋ を表示 -->
+          <button
+            type="button"
+            class="toggle-btn"
+            :class="{ open: showInput }"
+            @click="showInput ? closeInput() : openInput()"
+          >{{ showInput ? '×' : '＋' }}</button>
+        </div><!-- /.top-row -->
+
+        <!-- 件数表示 -->
+        <div class="search-status" :class="{ 'is-searching': searchText.trim() }">
+          {{ filteredTodos.length }}{{ t.statusOf }}{{ todos.length }}{{ t.statusItems }}
+        </div>
+
+      </div><!-- /.top-fixed -->
+
+
+      <!-- ══════════════════════════════════════
+          タスク追加フォーム
+          ＋ボタンを押したときだけ表示（v-if で制御）
+          ══════════════════════════════════════ -->
+      <div v-if="showInput" class="input-area">
+
+        <!-- タスク入力欄（最大120文字） -->
+        <textarea
+          v-model="newTodo"
+          :placeholder="t.placeholderTodo"
+          maxlength="120"
+          rows="1"
+          @input="newTodo = newTodo.slice(0, 120)"
+          @focus="cancelEditIfNeeded"
+          class="todo-textarea"
+        ></textarea>
+
+        <!-- カテゴリ入力欄（最大20文字） -->
+        <!-- フォーカス中かつ候補があるとき青枠で候補リストと一体化する -->
+        <input
+          v-model="category"
+          :placeholder="t.placeholderCategory"
+          maxlength="20"
+          :class="{ 'category-input-active': categoryFocused && filteredCategories.length > 0 }"
+          @input="category = category.slice(0, 20)"
+          @focus="categoryFocused = true; cancelEditIfNeeded()"
+          @blur="setTimeout(() => { categoryFocused = false }, 200)"
+        >
+
+        <!-- カテゴリ候補リスト：フォーカス中かつ候補があるときだけ表示 -->
+        <template v-if="categoryFocused && filteredCategories.length > 0">
+          <div class="category-dropdown-label">{{ t.categorySuggestions }}</div>
+          <div class="category-dropdown">
+            <div
+              v-for="cat in filteredCategories"
+              :key="cat"
+              class="category-option"
+              @click="selectCategory(cat)"
+            >▸ {{ cat }}</div>
+          </div>
+        </template>
+
+        <!-- 期日入力欄 -->
+        <div class="date-row">
+          <span class="date-label">{{ t.datePlaceholder }}</span>
+          <input type="date" v-model="dueDate">
+        </div>
+
+        <!-- 追加・キャンセルボタン（横並び） -->
+        <div class="btn-row">
+          <button type="button" class="add-btn" @click="addTodo">
+            <span class="material-symbols-outlined" translate="no">add_circle</span>
+            {{ t.add }}
+          </button>
+          <button type="button" class="cancel-add-btn" @click="closeInput">
+            <span class="material-symbols-outlined" translate="no">cancel</span>
+            {{ t.cancel }}
+          </button>
+        </div>
+
+      </div><!-- /.input-area -->
+
+
+      <!-- ══════════════════════════════════════
+          タスク一覧エリア
+          groupBy の値で「一覧モード」か「グループモード」かが切り替わる
+          ══════════════════════════════════════ -->
+
+      <!-- 一覧モード（groupBy === 'none' のとき） -->
+      <!-- sortedTodos：新しい順に並べたタスク一覧（computedで計算済み） -->
+      <div v-if="groupBy === 'none'">
+        <!-- transition-group → v-forのリストにアニメーションをつける -->
+        <transition-group name="todo-fade" tag="div">
+        <todo-card
+          v-for="todo in sortedTodos"
+          :key="todo.id"
+          :todo="todo"
+          :editing-id="editingId"
+          :t="t"
+          :format-date-fn="formatDate"
+          :filtered-categories-edit="filteredCategoriesEdit"
+          @card-click="startEdit"
+          @edit="startEdit"
+          @delete="deleteTodo"
+          @save="finishEdit"
+          @cancel="cancelEdit"
+          @clone="copyTodo"
+        ></todo-card>
+      </div>
+
+      <!-- グループモード（カテゴリ or 期日でまとめる） -->
+      <div v-else>
+        <div v-for="group in groupedTodos" :key="group.label">
+
+          <!-- グループの見出し：クリックで開閉する -->
+          <div class="group-header" @click="toggleGroup(group.label)">
+            <div class="group-header-left">
+              <span class="group-title">{{ group.label }}</span>
+              <span class="group-count">{{ group.todos.length }}件</span>
+            </div>
+            <!-- ▼が回転して開閉を示す（CSSのtransitionでアニメーション） -->
+            <span
+              class="group-arrow"
+              :class="{ closed: !openGroups.includes(group.label) }"
+            >▼</span>
+          </div>
+
+          <!-- グループ内のタスク一覧（開いているときだけ表示） -->
+          <div v-if="openGroups.includes(group.label)">
+            <todo-card
+              v-for="todo in group.todos"
+              :key="todo.id"
+              :todo="todo"
+              :editing-id="editingId"
+              :t="t"
+              :format-date-fn="formatDate"
+              :filtered-categories-edit="filteredCategoriesEdit"
+              @card-click="startEdit"
+              @edit="startEdit"
+              @delete="deleteTodo"
+              @save="finishEdit"
+              @cancel="cancelEdit"
+              @clone="copyTodo"
+            ></todo-card>
+          </div>
+
+        </div>
+      </div><!-- /グループモード -->
+
+
+      <!-- ══════════════════════════════════════
+          トースト通知
+          toastMessage があるときだけ表示・自動でフェードアウトする
+          ══════════════════════════════════════ -->
+      <div
+        v-if="toastMessage"
+        class="toast"
+        :class="{ 'toast-hide': toastHiding }"
+      >{{ toastMessage }}</div>
+
+
+      <!-- ══════════════════════════════════════
+          下部固定エリア（表示切替ボタン）
+          入力・編集中は .hidden クラスで非表示になる
+          ══════════════════════════════════════ -->
+      <div class="bottom-bar">
+        <div class="bottom-buttons">
+          <!-- active クラスが付いているボタンが選択中（黒くなる） -->
+          <button type="button" @click="groupBy = 'none'"     :class="{ active: groupBy === 'none' }">{{ t.groupByNone }}</button>
+          <button type="button" @click="groupBy = 'category'" :class="{ active: groupBy === 'category' }">{{ t.groupByCategory }}</button>
+          <button type="button" @click="groupBy = 'dueDate'"  :class="{ active: groupBy === 'dueDate' }">{{ t.groupByDate }}</button>
+        </div>
+      </div><!-- /.bottom-bar -->
+    </div><!-- /.container -->
+
+  </div><!-- /#app -->
+
+<!-- VUEを読み込む。急に動かなくならないようバージョンを固定 ══ -->
+<script src="https://unpkg.com/vue@3.5.13/dist/vue.global.js"></script>
+<script>
+
+// VueからcreateAppを取り出す
+const { createApp } = Vue
+
+// =============================================
+// CSV1行をパース（分解）する関数
+// "値1","値,2",値3 のようなCSVを正しく分割する
+// ※ "" で囲まれた値の中のカンマは区切りとして扱わない
+// appより先に定義しておく（importFromCSVから呼ばれるため）
+// =============================================
+function parseCSVLine(line) {
+  const result = []
+  let current = ''
+  let inQuotes = false
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    if (char === '"') {
+      // "" は " 1文字として扱う（エスケープ）
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"'
+        i++
+      } else {
+        inQuotes = !inQuotes
+      }
+    } else if (char === ',' && !inQuotes) {
+      // クォートの外のカンマは区切り
+      result.push(current)
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  result.push(current)
+  return result
+}
+
+
+// =============================================
+// Vueアプリ本体
+// createApp → アプリを作る
+// app変数に入れる → 後でコンポーネントを登録するため
+// =============================================
+const app = createApp({
+
+  // ── データ（アプリが持つ変数） ──
+  data() {
+    return {
+      // 現在の言語（'ja' か 'en'）
+      currentLang: 'ja',
+
+      // 多言語辞書（ここに言語を追加すれば他言語対応できる）
+      translations: {
+        ja: {
+          placeholderTodo:        'タスク',
+          placeholderCategory:    'カテゴリ（任意）',
+          placeholderSearch:      'タスク・キーワードを入力',
+          add:                    '追加',
+          save:                   '更新',
+          cancel:                 '戻る',
+          delete:                 '削除',
+          edit:                   '編集',
+          groupByNone:            '一覧',
+          groupByCategory:        'カテゴリ',
+          groupByDate:            '期日',
+          noCategory:             '未分類',
+          noDate:                 '期日なし',
+          statusOf:               '件を表示中 (全',
+          statusItems:            '件)',
+          langLabel:              '言語',
+          categorySuggestions:    '候補',
+          datePlaceholder:        '期日',
+          deleteInfo:             '【注意】\nこのタスクを削除しますか？',
+          copyInfo:               'このタスクをコピーして新しいタスクを追加しますか？\n\n【注意】\n 日付はコピーされません',
+          importFile:             '取込',
+          // トーストで使用。{name} の部分がタスク名に置き換わる
+          toastAdded:             '「{name}」を追加しました',
+          toastUpdated:           '「{name}」に更新しました',
+          toastDeleted:           '「{name}」を削除しました',
+          toastExported:          'エクスポートしました',
+          // トーストで使用。{count} の部分が件数に置き換わる
+          toastImported:          '{count}件取り込みました',
+          toastImportCancelled:   '取込をキャンセルしました',
+          toastImportError:       '読み込みに失敗しました',
+          saveError:              '保存できませんでした',
+          importConfirmOverwrite: '上書きモードで取り込みますか？\n\n【注意】\n既存のタスクが消えて取込みデータだけになります',
+          importConfirmAppend:    '追加モードで取り込みますか？\n\n【注意】\n既存のタスクに追加して取込みます\n\n「キャンセル」→取込みをキャンセル',
+          CSVoutputInfo:          
+                                  'CSVファイルで出力しますか？(todos.csv)\n\n' +
+                                  '【CSVの列順】\n' +
+                                  'タスク（最大120文字）, カテゴリ（最大20文字）, 期日（yyyy-mm-dd）, 完了（true/false）',
+          JSONoutputInfo:         'JSONファイルで出力しますか？(todos.json)',
+          importFormatInfo:
+                                  '【取込フォーマット】\n' +
+                                  'CSV・JSON形式のファイルを取り込めます\n\n' +
+                                  '【CSVの列順】\n' +
+                                  'タスク（最大120文字）, カテゴリ（最大20文字）, 期日（yyyy-mm-dd）, 完了（true/false）\n\n' +
+                                  '【注意】\n' +
+                                  '・タスクが空白の行はスキップします\n' +
+                                  '・期日はyyyy-mm-dd以外は空白扱い\n' +
+                                  '・完了はtrue/false以外はfalse扱い\n\n' +
+                                  'OKを押してファイルを選択してください',
+        },
+        en: {
+          placeholderTodo:        'Task',
+          placeholderCategory:    'Category (optional)',
+          placeholderSearch:      'Enter task or keyword',
+          add:                    'Add',
+          save:                   'Save',
+          cancel:                 'Cancel',
+          delete:                 'Delete',
+          edit:                   'Edit',
+          groupByNone:            'List',
+          groupByCategory:        'Category',
+          groupByDate:            'Due date',
+          noCategory:             'Uncategorized',
+          noDate:                 'No due date',
+          statusOf:               ' shown (total ',
+          statusItems:            ')',
+          langLabel:              'Lang',
+          categorySuggestions:    'Suggestions',
+          datePlaceholder:        'Due date',
+          deleteInfo:             '【Note】 Do you want to delete this task?',
+          copyInfo:               'Do you want to copy this task and add it as a new task?\n\n【Note】\nThe date will not be copied',
+          importFile:             'Import',
+          toastAdded:             '"{name}" added',
+          toastUpdated:           'Updated to "{name}"',
+          toastDeleted:           '"{name}" deleted',
+          toastExported:          'Exported',
+          toastImported:          '{count} tasks imported',
+          toastImportCancelled:   'Import cancelled',
+          toastImportError:       'Import failed',
+          saveError:              'Could not save',
+          importConfirmOverwrite: 'Import in overwrite mode?\n\n【Note】\nExisting tasks will be deleted.',
+          importConfirmAppend:    'Import in append mode?\n\n【Note】\nasks will be added to existing ones.\n\nCancel → Cancel import',
+          CSVoutputInfo:          
+                                  'Do you want to output the file as a CSV file?(todos.csv)\n\n' +
+                                  '[CSV Column Order]\n' +
+                                  'Task (max 120), Category (max 20), Due date (yyyy-mm-dd), Done (true/false)',
+          JSONoutputInfo:         'Do you want to output it as a JSON file?(todos.json',
+          importFormatInfo:
+                                  '[Import Format]\n' +
+                                  'CSV or JSON files are supported\n\n' +
+                                  '[CSV Column Order]\n' +
+                                  'Task (max 120), Category (max 20), Due date (yyyy-mm-dd), Done (true/false)\n\n' +
+                                  '[Notes]\n' +
+                                  '・Rows with empty task will be skipped\n' +
+                                  '・Invalid date format will be treated as empty\n' +
+                                  '・Values other than true/false will be treated as false\n\n' +
+                                  'Press OK to select a file',
+                                      }
+      },
+
+      // 上部固定エリアの高さ
+      topHeight: 120, 
+
+      // 追加フォームの入力値
+      newTodo:   '',
+      category:  '',
+      dueDate:   '',
+
+      // タスクの一覧（すべてのデータはここに入る）
+      todos: [],
+
+      // 検索欄のテキスト
+      searchText: '',
+
+      // 編集中のタスクのID（編集していないときはnull）
+      editingId: null,
+
+      // 編集キャンセル用のバックアップ（元のデータを保存しておく）
+      editingBackup: null,
+
+      // グループ表示の種類（'none' / 'category' / 'dueDate'）
+      groupBy: 'none',
+
+      // 現在開いているグループの名前一覧
+      openGroups: [],
+
+      // 追加フォームの表示・非表示
+      showInput: false,
+
+      // 追加フォームのカテゴリ欄にフォーカスしているか
+      categoryFocused: false,
+
+      // トーストに表示するメッセージ（空のとき非表示）
+      toastMessage: '',
+
+      // トーストがフェードアウト中かどうか
+      toastHiding: false,
+    }
+  },
+
+
+  // ── 算出プロパティ（dataを加工して返す。依存データが変わると自動再計算） ──
+  computed: {
+
+    // 現在の言語のテキストセットを返す
+    t() { return this.translations[this.currentLang] },
+
+    // 登録済みカテゴリの一覧（重複なし）
+    // Set → 重複を自動で除いてくれるJavaScriptの仕組み
+    allCategories() {
+      const cats = this.todos.map(t => t.category).filter(c => c && c.trim())
+      return [...new Set(cats)]
+    },
+
+    // 追加フォームのカテゴリ候補
+    // 空欄のときは全候補、入力中は部分一致で絞り込む
+    filteredCategories() {
+      if (!this.category.trim()) return this.allCategories
+      const q = this.category.toLowerCase()
+      return this.allCategories.filter(cat =>
+        cat.toLowerCase().includes(q) && cat !== this.category
+      )
+    },
+
+    // 編集フォームのカテゴリ候補
+    // 編集中のタスクのカテゴリで絞り込む
+    filteredCategoriesEdit() {
+      if (this.editingId === null) return []
+      const todo = this.todos.find(t => t.id === this.editingId)
+      if (!todo) return []
+      if (!todo.category.trim()) return this.allCategories
+      const q = todo.category.toLowerCase()
+      return this.allCategories.filter(cat =>
+        cat.toLowerCase().includes(q) && cat !== todo.category
+      )
+    },
+
+    // 検索フィルター（searchTextが変わるたびに自動再計算）
+    filteredTodos() {
+      const q = this.toHankaku(this.searchText.toLowerCase().trim())
+      if (!q) return this.todos
+      const deadline = this.parseDeadline(q)
+      if (deadline) {
+        return this.todos.filter(todo => this.isBeforeDeadline(todo.dueDate, deadline))
+      }
+      return this.todos.filter(todo => {
+        const text = this.toHankaku(todo.text.toLowerCase())
+        const cat  = this.toHankaku((todo.category || '').toLowerCase())
+        return text.includes(q) || cat.includes(q)
+      })
+    },
+
+    // 一覧モード専用：filteredTodos を新しい順に並べたもの
+    // filteredTodos はフィルターだけ・このプロパティでソートする
+    sortedTodos() {
+      return this.filteredTodos.slice().sort((a, b) =>
+        a.createdAt > b.createdAt ? -1 : 1  // 新しい順
+      )
+    },
+
+    // グループ化されたタスク一覧
+    groupedTodos() {
+      const todos = this.filteredTodos
+      if (this.groupBy === 'category') {
+        const map = {}
+        todos.forEach(todo => {
+          const key = todo.category || this.t.noCategory
+          if (!map[key]) map[key] = []
+          map[key].push(todo)
+        })
+        return Object.keys(map)
+          .map(label => ({ label, todos: map[label] }))
+          .sort((a, b) => {
+            if (a.label === this.t.noCategory) return 1
+            if (b.label === this.t.noCategory) return -1
+            return a.label.localeCompare(b.label)
+          })
+          // ↓↓↓ ここを追加：グループ内を「期日が近い順 → 登録が古い順」に並べる
+          .map(group => ({
+            label: group.label,
+            todos: group.todos.slice().sort((a, b) => {
+              // 期日なしは一番後ろにする
+              // '' は日付として比較できないので特別扱いする
+              const aDate = a.dueDate || '9999-99-99'
+              const bDate = b.dueDate || '9999-99-99'
+
+              // 期日が違うなら期日が早い順（文字列比較でOK。yyyy-mm-dd形式のため）
+              if (aDate !== bDate) return aDate > bDate ? 1 : -1
+
+              // 期日が同じなら登録が古い順（createdAt で比較）
+              return a.createdAt > b.createdAt ? 1 : -1
+          })
+    }))
+}
+      if (this.groupBy === 'dueDate') {
+        const map = {}
+        todos.forEach(todo => {
+          const key = todo.dueDate ? this.formatDate(todo.dueDate) : this.t.noDate
+          if (!map[key]) map[key] = []
+          map[key].push(todo)
+        })
+        return Object.keys(map)
+          .map(label => ({ label, todos: map[label] }))
+          .sort((a, b) => {
+            if (a.label === this.t.noDate) return 1
+            if (b.label === this.t.noDate) return -1
+            return a.todos[0].dueDate > b.todos[0].dueDate ? 1 : -1
+          })
+          // グループ内を「カテゴリ名前順 → 登録が古い順」に並べる
+          .map(group => ({
+            label: group.label,
+            todos: group.todos.slice().sort((a, b) => {
+              // カテゴリなしは一番後ろにする
+              const aCat = a.category || 'ｿ' // 'ｿ' は五十音の最後のほうの文字
+              const bCat = b.category || 'ｿ'
+
+              // カテゴリが違うならカテゴリ名前順
+              if (aCat !== bCat) return aCat.localeCompare(bCat)
+
+              // カテゴリが同じなら登録が古い順
+              return a.createdAt > b.createdAt ? 1 : -1
+            })
+          }))
+      }
+      return []
+    }
+  },
+
+
+  // ── メソッド（ボタンを押したときなどの処理） ──
+  methods: {
+
+    // 上部固定エリアの高さを測って topHeight を更新する
+    updateTopHeight() {
+      const topEl = document.querySelector('.top-fixed')
+      if (topEl) {
+        // getBoundingClientRect().height → 要素の実際の高さを取得する
+        this.topHeight = topEl.getBoundingClientRect().height
+      }
+    }, 
+  
+  // ── フォーム関連 ──
+
+    // 追加フォームを開く
+    openInput() {
+      this.cancelEditIfNeeded()
+      // 検索欄に文字があればタスクにコピーする
+      if (this.searchText.trim()) this.newTodo = this.searchText
+      this.showInput = true
+      // 入力エリアが見えるように一番上にスクロールする
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    },
+
+    // 追加フォームを閉じて入力欄をリセット
+    closeInput() {
+      this.showInput = false
+      this.newTodo = ''
+      this.category = ''
+      this.dueDate = ''
+      this.categoryFocused = false
+    },
+
+    // 検索欄でEnterを押したとき追加フォームを開く
+    onSearchEnter() {
+      if (!this.showInput) this.openInput()
+    },
+
+    // 編集中なら先にキャンセルする
+    cancelEditIfNeeded() {
+      if (this.editingId !== null) this.cancelEdit()
+    },
+
+    // カテゴリ候補をタップしたとき入力欄に反映する
+    selectCategory(cat) { this.category = cat },
+
+
+  // ── タスク操作 ──
+
+    // タスクを追加する
+    addTodo() {
+      if (!this.newTodo.trim()) return
+      this.todos.push({
+        // crypto.randomUUID() → 重複しないIDを生成する（標準的なブラウザ機能）
+        id:        crypto.randomUUID(),
+        text:      this.newTodo,
+        category:  this.category,
+        dueDate:   this.dueDate,
+        done:      false,
+        createdAt: new Date().toISOString()
+      })
+      this.showToast(this.t.toastAdded, this.newTodo)
+      // 検索欄をクリアして全件表示に戻す
+      this.searchText = ''
+      this.closeInput()
+    },
+
+    // タスクを削除する
+    deleteTodo(todo) {
+      const DELETEproceed = confirm(this.t.deleteInfo)
+      if (!DELETEproceed) return
+
+      // cancelEditIfNeeded()は「元に戻す」処理も走るので削除時には使わない
+      // バックアップをそっと捨てるだけにする
+      this.editingId = null
+      this.editingBackup = null
+
+      // トーストを先に表示（削除後だとtodo.textが取れないため）
+      this.showToast(this.t.toastDeleted, todo.text)
+      this.todos = this.todos.filter(t => t.id !== todo.id)
+    },
+
+    // 編集モードを開始する
+    startEdit(todo) {
+      if (this.showInput) this.closeInput()
+      if (this.editingId !== null) this.cancelEdit()
+      // キャンセル用にデータをコピーして保存しておく
+      // { ...todo } はオブジェクトのコピー（スプレッド構文）
+      this.editingBackup = { ...todo }
+      this.editingId = todo.id
+    },
+
+    // 編集を保存する
+    finishEdit() {
+      const todo = this.todos.find(t => t.id === this.editingId)
+      // テキストが空なら元に戻す
+      if (todo && !todo.text.trim()) {
+        this.cancelEdit()
+        return
+      }
+      this.showToast(this.t.toastUpdated, todo.text)
+      this.editingId = null
+      this.editingBackup = null
+
+    },
+
+    // 編集をキャンセルして元のデータに戻す
+    cancelEdit() {
+      if (this.editingBackup !== null) {
+        const index = this.todos.findIndex(t => t.id === this.editingBackup.id)
+        // splice(index, 1, 新データ) → index番目を1件削除して新データを入れる
+        if (index !== -1) this.todos.splice(index, 1, { ...this.editingBackup })
+      }
+      this.editingId = null
+      this.editingBackup = null
+    },
+
+
+  // ── グループ・コピー ──
+
+    // グループを開閉する
+    toggleGroup(label) {
+      const i = this.openGroups.indexOf(label)
+      // indexOf → 見つからないとき -1 を返す
+      if (i === -1) this.openGroups.push(label)  // 開く
+      else this.openGroups.splice(i, 1)           // 閉じる
+    },
+
+    // タスクをコピーして追加フォームを開く（テキスト・カテゴリのみ、期日はリセット）
+    copyTodo(todo) {
+      const COPYproceed = confirm(this.t.copyInfo)
+      if (!COPYproceed) return
+
+      this.cancelEditIfNeeded()
+      this.newTodo   = todo.text
+      this.category  = todo.category
+      this.dueDate   = ''
+      this.showInput = true
+
+      // $nextTick → Vueが画面の更新を終えてからスクロールする
+      // （showInput = true でフォームが表示されてから動かす）
+      this.$nextTick(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      })
+    },
+
+
+  // ── 通知・表示 ── 
+
+    // トーストを表示する
+    // message: 翻訳テキスト（{name}がタスク名に置き換わる）
+    // name: タスク名（省略すると空文字）
+    showToast(message, name = '') {
+      const text = message.replace('{name}', name)
+      this.toastMessage = text
+      this.toastHiding = false
+      // 2秒後にフェードアウト開始
+      setTimeout(() => {
+        this.toastHiding = true
+        // フェードアウト（0.4秒）が終わったらメッセージを消す
+        setTimeout(() => {
+          this.toastMessage = ''
+          this.toastHiding = false
+        }, 400)
+      }, 2000)
+    },
+
+    // "2025-04-01" → "4/1(火)" に変換する
+    formatDate(dateStr) {
+      if (!dateStr) return ''
+      const [y, m, d] = dateStr.split('-').map(Number)
+      const date = new Date(y, m - 1, d)
+      const ja = ['日','月','火','水','木','金','土']
+      const en = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+      const days = this.currentLang === 'ja' ? ja : en
+      return `${m}/${d}(${days[date.getDay()]})`
+    },
+
+    // 全角英数字を半角に変換する（検索用）
+    toHankaku(str) {
+      return str.replace(/[Ａ-Ｚａ-ｚ０-９]/g, c =>
+        String.fromCharCode(c.charCodeAt(0) - 65248)
+      )
+    },
+
+
+  // ── 検索 ──
+
+    // 検索欄に「今日」「来週」などと入力したとき締切日として解釈する
+    parseDeadline(q) {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const nextSunday = w => {
+        const d = today.getDay()
+        const diff = d === 0 ? 7 : 7 - d
+        const r = new Date(today)
+        r.setDate(today.getDate() + diff + w * 7)
+        return r
+      }
+      const monthEnd = n => new Date(today.getFullYear(), today.getMonth() + 1 + n, 0)
+      const youbiMap = {
+        '日':0,'月':1,'火':2,'水':3,'木':4,'金':5,'土':6,
+        '日曜':0,'月曜':1,'火曜':2,'水曜':3,'木曜':4,'金曜':5,'土曜':6,
+        '日曜日':0,'月曜日':1,'火曜日':2,'水曜日':3,'木曜日':4,'金曜日':5,'土曜日':6,
+        'sun':0,'mon':1,'tue':2,'wed':3,'thu':4,'fri':5,'sat':6,
+        'sunday':0,'monday':1,'tuesday':2,'wednesday':3,
+        'thursday':4,'friday':5,'saturday':6
+      }
+      const specificMonthMap = {
+        '1月':1,'2月':2,'3月':3,'4月':4,'5月':5,'6月':6,
+        '7月':7,'8月':8,'9月':9,'10月':10,'11月':11,'12月':12,
+        'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
+        'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12,
+        'january':1,'february':2,'march':3,'april':4,
+        'june':6,'july':7,'august':8,'september':9,
+        'october':10,'november':11,'december':12
+      }
+      const relDayMap = {
+        '今日':0,'today':0,'明日':1,'あした':1,'tomorrow':1,
+        '明後日':2,'あさって':2,'day after tomorrow':2
+      }
+      const relWeekMap = {
+        '今週':nextSunday(0),'this week':nextSunday(0),
+        '来週':nextSunday(1),'next week':nextSunday(1),
+        '再来週':nextSunday(2),'week after next':nextSunday(2)
+      }
+      const relMonthMap = {
+        '今月':monthEnd(0),'this month':monthEnd(0),
+        '来月':monthEnd(1),'next month':monthEnd(1),
+        '再来月':monthEnd(2),'month after next':monthEnd(2)
+      }
+      if (q in relDayMap) {
+        const r = new Date(today)
+        r.setDate(today.getDate() + relDayMap[q])
+        return r
+      }
+      if (q in relWeekMap) return relWeekMap[q]
+      if (q in relMonthMap) return relMonthMap[q]
+      if (q in youbiMap) {
+        const diff = ((youbiMap[q] - today.getDay()) + 7) % 7 || 7
+        const r = new Date(today)
+        r.setDate(today.getDate() + diff)
+        return r
+      }
+      if (q in specificMonthMap) {
+        const m = specificMonthMap[q]
+        const y = m < today.getMonth() + 1 ? today.getFullYear() + 1 : today.getFullYear()
+        return new Date(y, m, 0)
+      }
+      const sm = q.match(/^(\d{1,2})\/$/)
+      if (sm) {
+        const m = parseInt(sm[1])
+        if (m >= 1 && m <= 12) {
+          const y = m < today.getMonth() + 1 ? today.getFullYear() + 1 : today.getFullYear()
+          return new Date(y, m, 0)
+        }
+      }
+      return null
+    },
+
+    // 期日が締切日以内かどうか判定する
+    isBeforeDeadline(dueDate, deadline) {
+      if (!dueDate) return true
+      const [y, m, d] = dueDate.split('-').map(Number)
+      const due = new Date(y, m - 1, d)
+      due.setHours(0, 0, 0, 0)
+      return due <= deadline
+    },
+
+
+  // ── ファイル入出力 ──
+
+    // ファイルをダウンロードさせる共通関数
+    // content: ファイルの中身
+    // filename: 保存するファイル名
+    // type: ファイルの種類（'text/csv' か 'application/json'）
+    downloadFile(content, filename, type) {
+      // Blob → データのかたまりを作る
+      const blob = new Blob([content], { type })
+      // URL.createObjectURL → Blobに一時的なURLを割り当てる
+      const url = URL.createObjectURL(blob)
+      // 見えないリンクを作って自動クリックでダウンロード
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      // 使い終わったURLを解放する（メモリの掃除）
+      URL.revokeObjectURL(url)
+    },
+
+    // CSVエクスポート
+    exportCSV() {
+      // ファイル選択前にフォーマット説明を表示
+      // confirm → OK なら選択に進む、キャンセルなら中止
+      const eCproceed = confirm(this.t.CSVoutputInfo)
+      if (!eCproceed) return
+
+      const rows = this.todos.map(todo => {
+        // カンマ・ダブルクォート・改行を含む値は "" で囲む
+        const escape = val => {
+          const str = String(val || '')
+          return str.includes(',') || str.includes('"') || str.includes('\n')
+            ? `"${str.replace(/"/g, '""')}"` // " は "" にエスケープ
+            : str
+        }
+        return [
+          escape(todo.text),
+          escape(todo.category),
+          escape(todo.dueDate),
+          todo.done ? 'true' : 'false'
+        ].join(',')
+      })
+      // \uFEFF → BOM（ExcelでCSVを開くときの文字化けを防ぐ）
+      const csv = '\uFEFF' + rows.join('\n')
+      this.downloadFile(csv, 'todos.csv', 'text/csv;charset=utf-8')
+      this.showToast(this.t.toastExported)
+    },
+
+    // JSONエクスポート
+    exportJSON() {
+      // ファイル選択前にフォーマット説明を表示
+      // confirm → OK なら選択に進む、キャンセルなら中止
+      const eJproceed = confirm(this.t.JSONoutputInfo)
+      if (!eJproceed) return
+
+      // JSON.stringify(データ, null, 2) → インデント付きのJSON文字列に変換
+      const json = JSON.stringify(this.todos, null, 2)
+      this.downloadFile(json, 'todos.json', 'application/json')
+      this.showToast(this.t.toastExported)
+    },
+
+    // ファイル選択ボタンをクリックする
+    // input type="file" は直接クリックできないので
+    // ref="importFile" で参照してプログラムからクリックする
+    triggerImport() {
+      // ファイル選択前にフォーマット説明を表示
+      // confirm → OK なら選択に進む、キャンセルなら中止
+      const proceed = confirm(this.t.importFormatInfo)
+      if (!proceed) return
+      this.$refs.importFile.click()
+    },
+
+    // ファイルが選択されたとき
+    importFile(event) {
+      const file = event.target.files[0]
+      if (!file) return
+
+      // 拡張子チェック：csv と json 以外はエラー
+      if (!file.name.endsWith('.csv') && !file.name.endsWith('.json')) {
+        this.showToast(this.t.toastImportError)
+        event.target.value = ''
+        return
+      }
+
+      // FileReader → ファイルの中身をテキストとして読み込む道具
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const content = e.target.result
+        try {
+          if (file.name.endsWith('.json')) {
+            this.importFromJSON(content)
+          } else if (file.name.endsWith('.csv')) {
+            this.importFromCSV(content)
+          }
+        } catch (err) {
+          this.showToast(this.t.toastImportError)
+          console.log('取込エラー:', err)
+        }
+        // 同じファイルを再度選択できるようにリセット
+        event.target.value = ''
+      }
+      // テキストとして読み込む（UTF-8）
+      reader.readAsText(file, 'UTF-8')
+    },
+
+    // JSONから取り込む
+    importFromJSON(content) {
+      const raw = JSON.parse(content)
+      if (!Array.isArray(raw)) throw new Error('配列ではありません')
+
+      const data = raw
+        .map(item => {
+          // タスク：120文字で切る
+          const taskText = (item.text || '').slice(0, 120)
+
+          // カテゴリ：20文字で切る
+          const category = (item.category || '').slice(0, 20)
+
+          // 期日：yyyy-mm-dd形式チェック
+          const rawDate = item.dueDate || ''
+          const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : ''
+
+          // 完了：true のみtrue、それ以外はfalse
+          const done = item.done === true
+
+          return { taskText, category, dueDate, done }
+        })
+        .filter(row => row.taskText.trim()) // タスクが空白の行はスキップ
+        .map(row => ({
+          id:        crypto.randomUUID(),
+          text:      row.taskText,
+          category:  row.category,
+          dueDate:   row.dueDate,
+          done:      row.done,
+          createdAt: new Date().toISOString()
+        }))
+
+      this.applyImport(data)
+    }, 
+
+    // csvから取り込む
+    importFromCSV(content) {
+      const text = content.replace(/^\uFEFF/, '')
+      const lines = text.split('\n').filter(line => line.trim())
+
+      const data = lines
+        .map(line => {
+          const cols = parseCSVLine(line)
+
+          // タスク：120文字で切る
+          const taskText = (cols[0] || '').slice(0, 120)
+
+          // カテゴリ：20文字で切る
+          const category = (cols[1] || '').slice(0, 20)
+
+          // 期日：yyyy-mm-dd形式チェック
+          const rawDate = cols[2] || ''
+          const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : ''
+
+          // 完了：'true' のみtrue、それ以外はfalse
+          const done = cols[3] === 'true'
+
+          // タスクが空白なら null を返す（後でfilterで除く）
+          if (!taskText.trim()) return null
+
+          return {
+            id:        crypto.randomUUID(),
+            text:      taskText,
+            category:  category,
+            dueDate:   dueDate,
+            done:      done,
+            createdAt: new Date().toISOString()
+          }
+        })
+        .filter(row => row !== null) // nullの行（タスクが空白）を除く
+
+      this.applyImport(data)
+    },
+
+    // 取り込んだデータをtodosに反映する（上書きか追加かを選ぶ）
+    applyImport(data) {
+      // 1回目：上書きモードで取り込むか？
+      const overwrite = confirm(this.t.importConfirmOverwrite)
+      if (overwrite) {
+        this.todos = data
+        this.showToast(this.t.toastImported.replace('{count}', data.length))
+        return
+      }
+      // 2回目：追加モードで取り込むか？
+      const append = confirm(this.t.importConfirmAppend)
+      if (append) {
+        // [...既存, ...新しいデータ] → 配列を結合する（スプレッド構文）
+        this.todos = [...this.todos, ...data]
+        this.showToast(this.t.toastImported.replace('{count}', data.length))
+        return
+      }
+      // どちらもキャンセル → 取込をやめる
+      this.showToast(this.t.toastImportCancelled)
+    },
+  },
+
+
+    // ── ウォッチャー（データの変化を監視する） ──
+    watch: {
+      // todosが変わったら自動でlocalStorageに保存する
+      // deep: true → 配列の中身の変化も検知する
+      todos: {
+        deep: true,
+        handler() {
+          try {
+            // タスクをJSON文字列に変換してlocalStorageに保存する
+            localStorage.setItem('todos', JSON.stringify(this.todos))
+          } catch (e) {
+            // プライベートブラウジングや容量オーバーのときはここに来る
+            // アプリはそのまま動かし続ける（クラッシュさせない）
+            // コンソールとトーストで通知
+            console.log(this.t.saveError, e)
+            this.showToast(this.t.saveError)
+          }
+        }
+      },  
+
+    // グループ表示が切り替わったとき
+    groupBy(newVal) {
+      if (newVal === 'none') {
+        this.openGroups = []
+      } else {
+        // 全グループを開いた状態にする
+        this.openGroups = this.groupedTodos.map(g => g.label)
+      }
+    },
+
+    // フォームの開閉で上部の高さが変わるので測り直す
+    // 追加フォームが開いたらフッターを隠す・閉じたら戻す
+    showInput(newVal) {
+      this.$nextTick(() => { this.updateTopHeight() })
+    }, 
+  },
+
+
+  // ── マウント（ページが読み込まれたとき1回だけ実行される） ──
+  mounted() {
+
+    // ブラウザのスクロール位置の自動復元をオフにする(リロード時に一覧ビューでカードの表示が途中から見えるのを防ぐ)
+    // 'manual' → 「自分でスクロール位置を管理する」という意味
+    // 'auto'   → ブラウザが自動で復元する（デフォルト）
+    if ('scrollRestoration' in history) {
+      // scrollRestoration に対応しているブラウザだけ設定する
+      // （古いブラウザには存在しない機能なので確認してから設定する）
+      history.scrollRestoration = 'manual'
+    }
+
+    const saved = localStorage.getItem('todos')
+    try {
+      if (saved) this.todos = JSON.parse(saved)
+    } catch (e) {
+      // データが壊れていたときは空にしてリセット
+      console.log('保存データが読めなかったのでリセットしました:', e)
+      this.todos = []
+    }
+
+    // $nextTick → Vueが画面を更新し終わったあとに実行する
+
+    // ページ読み込み時に高さを測る
+    this.$nextTick(() => {
+      this.openGroups = this.groupedTodos.map(g => g.label)
+      this.updateTopHeight()
+    }) 
+
+    // フォント読み込み完了後にも高さを測り直す
+    // document.fonts.ready → 全フォントの読み込みが終わったら実行する
+    document.fonts.ready.then(() => {
+      this.updateTopHeight()
+    })
+    
+    // 画面サイズが変わったとき（向き変更など）も高さを測り直す
+    window.addEventListener('resize', () => {
+      this.updateTopHeight()  
+    })
+  }
+
+}) // createApp ここまで
+
+// =============================================
+// todo-card コンポーネント（タスク1件分の部品）
+// 一覧モード・グループモード両方で使い回せる
+// =============================================
+app.component('todo-card', {
+
+  // props：親（アプリ本体）から受け取るデータ
+  props: [
+    'todo',                   // 1件分のタスクデータ
+    'editingId',              // 編集中のタスクのID
+    't',                      // 翻訳テキスト一覧
+    'formatDateFn',           // 日付フォーマット関数
+    'filteredCategoriesEdit', // 編集時のカテゴリ候補
+  ],
+
+  // data：このコンポーネント自身が持つ変数
+  data() {
+    return {
+      // カテゴリ入力欄にフォーカスしているか
+      categoryFocused: false, 
+    }
+  },
+
+  methods: {
+    // 期日が今日より前かどうか判定する（期限切れ → タグを赤くする）
+    isOverdue(dateStr) {
+      if (!dateStr) return false
+      const [y, m, d] = dateStr.split('-').map(Number)
+      const due = new Date(y, m - 1, d)
+      due.setHours(0, 0, 0, 0)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      return due < today
+    }
+  },
+
+  template: `
+
+      <div
+        class="todo-card"
+        :class="{
+          editing: editingId === todo.id,      /* 編集中のときeditingクラスを付ける */
+          overdue: isOverdue(todo.dueDate),    /* 期限切れのときoverdueクラスを付ける */
+          done: todo.done                      /* 完了済みのときdoneクラスを付ける */
+        }"
+        @click="editingId !== todo.id && $emit('card-click', todo)"
+      >
+    
+      <!-- editingId !== todo.id → 編集中でないときだけ card-click を発火する -->
+      <!-- && → 左が true のときだけ右を実行する（短絡評価）-->
+      <!-- つまり編集中のときは @click が何もしなくなる -->
+
+      <!-- 通常表示（編集中でないとき） -->
+      <div v-if="editingId !== todo.id" class="card-row">
+        <div class="card-left">
+
+          <!-- チェックボックス：.stop でカードのクリックに伝わらないようにする -->
+          <input 
+            type="checkbox"
+            class="cb"
+            v-model="todo.done"
+            @click.stop
+          >
+
+          <!-- タスクテキスト＋タグ（横並び・折り返しあり） -->
+          <div class="todo-text-area">
+            <div class="todo-main-text" :class="{ done: todo.done }">
+              {{ todo.text }}
+            </div>
+            <div class="todo-tags">
+              <span v-if="todo.category" class="tag tag-category">{{ todo.category }}</span>
+              <span
+                v-if="todo.dueDate"
+                class="tag tag-date"
+                :class="{ overdue: isOverdue(todo.dueDate) }"
+              >{{ formatDateFn(todo.dueDate) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 編集・削除・コピーボタン -->
+        <div class="card-right">
+
+          <!-- 編集ボタン：edit_square アイコン -->
+          <!-- @click.stop → クリックがカード全体に伝わらないように止める -->
+          <!-- 編集ボタン -->
+          <button type="button" @click.stop="$emit('edit', todo)" title="編集">
+            <span class="material-symbols-outlined" translate="no">edit_square</span>
+          </button>
+
+          <!-- 削除ボタン -->
+          <button type="button" class="delete-btn" @click.stop="$emit('delete', todo)" title="削除">
+            <span class="material-symbols-outlined" translate="no">delete</span>
+          </button>
+
+          <!-- コピーして作成ボタン -->
+            <button type="button" class="copy-btn" @click.stop="$emit('clone', todo)">
+            <span class="material-symbols-outlined" translate="no">content_copy</span>
+          </button>
+
+        </div>
+       </div>
+
+      <!-- 編集モード（編集中のとき） -->
+      <div v-else class="edit-inputs" @click.stop>
+
+        <!-- タスク入力欄 最大文字数120-->
+        <!-- todo.text.slice(0, 120) WinIMEコンポジションバグ対策 120文字制限が聞かない時用の対策-->
+        <textarea
+          v-model="todo.text"
+          :placeholder="t.placeholderTodo"
+          maxlength="120"
+          rows="1"
+          @input="todo.text = todo.text.slice(0, 120)"
+          class="todo-textarea"
+        ></textarea>
+
+        <!-- カテゴリ入力欄：フォーカス中かつ候補があるとき青枠で一体化 最大文字数20-->
+        <!-- todo.category.slice(0, 20) WinIMEコンポジションバグ対策 20文字制限が聞かない時用の対策-->
+        <input
+          v-model="todo.category"
+          :placeholder="t.placeholderCategory"
+          maxlength="20"
+          :class="{ 'category-input-active': categoryFocused && filteredCategoriesEdit && filteredCategoriesEdit.length > 0 }"
+          @input="todo.category = todo.category.slice(0, 20)"
+          @focus="categoryFocused = true"
+          @blur="setTimeout(() => { categoryFocused = false }, 200)"
+        >
+
+        <!-- カテゴリ候補：フォーカス中かつ候補があるときだけ表示 -->
+        <template v-if="categoryFocused && filteredCategoriesEdit && filteredCategoriesEdit.length > 0">
+          <div class="category-dropdown-label">{{ t.categorySuggestions }}</div>
+          <div class="category-dropdown">
+            <div
+              v-for="cat in filteredCategoriesEdit"
+              :key="cat"
+              class="category-option"
+              @click.stop="todo.category = cat"
+            >▸ {{ cat }}</div>
+          </div>
+        </template>
+
+        <!-- 期日入力欄 -->
+        <div class="date-row">
+          <span class="date-label">{{ t.datePlaceholder }}</span>
+          <input type="date" v-model="todo.dueDate">
+        </div>
+
+        <!-- 更新・キャンセル・削除ボタン・コピーボタン（横並び） -->
+        <div class="btn-row">
+
+          <!-- 更新ボタン：save アイコン＋テキスト -->
+          <button type="button" class="save-btn" @click="$emit('save')">
+            <span class="material-symbols-outlined" translate="no">save</span>
+            {{ t.save }}
+          </button>
+
+          <!-- 戻るボタン：undo アイコン＋テキスト -->
+          <button type="button" class="cancel-btn" @click="$emit('cancel')">
+            <span class="material-symbols-outlined" translate="no">cancel</span>
+            {{ t.cancel }}
+          </button>
+
+          <!-- 削除ボタン：delete アイコン＋テキスト -->
+          <button type="button" class="delete-btn" @click="$emit('delete', todo)">
+            <span class="material-symbols-outlined" translate="no">delete</span>
+            {{ t.delete }}
+          </button>
+
+          <!-- コピーボタン：content_copy アイコン＋テキスト -->
+          <button type="button" class="copy-btn" @click="$emit('clone', todo)">
+            <span class="material-symbols-outlined" translate="no">content_copy</span>
+            Copy
+          </button>
+
+        </div>
+
+      </div>
+    </div>
+  `
+}) // todo-card ここまで
+
+
+// アプリを「id="app"」の要素に表示する
+app.mount('#app')
+
+</script>
+<script src="qororie-plugin.js"></script>
+</body>
+</html>
