@@ -71,7 +71,7 @@
     --e: #71752B;
     --f: #191919;
     --g: #F5F2E4;
-}
+  }
 
 
     /* =============================================
@@ -134,6 +134,13 @@
       font-size: 11px;
       cursor: pointer;
     }
+
+    /* 取込ボタンを囲ってるlabelをio-btnと同じ見た目にする
+    　（ファイル選択画面がブラウザセキュリティで出ないことがある対応としてlabel導入） */
+    .io-import-label {
+      cursor: pointer;
+    }
+
     .lang-switch button:hover,
     .io-btn:hover { color: var(--f); border-color: var(--f); }
 
@@ -693,9 +700,14 @@
           <div class="io-bar">
             <button type="button" class="io-btn" @click="exportCSV">CSV</button>
             <button type="button" class="io-btn" @click="exportJSON">JSON</button>
-            <button type="button" class="io-btn" @click="triggerImport">{{ t.importFile }}</button>
-            <!-- ファイル選択は非表示のinputで処理する -->
-            <!-- accept → 選べるファイルの種類を制限する -->
+            <!-- ？ボタン：フォーマット説明を表示するだけ -->
+            <button type="button" class="io-btn" @click="showImportInfo">?</button>
+
+            
+          <!-- 取込ボタン：直接ファイル選択を開く -->
+          <!-- labelでinputを包む → クリックが直接inputに伝わる -->
+          <label class="io-btn io-import-label">
+            {{ t.importFile }}
             <input
               type="file"
               ref="importFile"
@@ -703,7 +715,8 @@
               style="display:none"
               @change="importFile"
             >
-          </div>
+          </label>
+        </div>
 
         </div><!-- /.top-actions -->
 
@@ -1531,7 +1544,7 @@ const app = createApp({
       // \uFEFF → BOM（ExcelでCSVを開くときの文字化けを防ぐ）
       const csv = '\uFEFF' + rows.join('\n')
       this.downloadFile(csv, 'todos.csv', 'text/csv;charset=utf-8')
-      this.showToast(this.t.toastExported)
+      this.showToast(this.t.toastExported)    
     },
 
     // JSONエクスポート
@@ -1547,15 +1560,9 @@ const app = createApp({
       this.showToast(this.t.toastExported)
     },
 
-    // ファイル選択ボタンをクリックする
-    // input type="file" は直接クリックできないので
-    // ref="importFile" で参照してプログラムからクリックする
-    triggerImport() {
-      // ファイル選択前にフォーマット説明を表示
-      // confirm → OK なら選択に進む、キャンセルなら中止
-      const proceed = confirm(this.t.importFormatInfo)
-      if (!proceed) return
-      this.$refs.importFile.click()
+    // ？ボタン：フォーマット説明をalertで表示するだけ
+    showImportInfo() {
+      alert(this.t.importFormatInfo)
     },
 
     // ファイルが選択されたとき
@@ -1570,61 +1577,47 @@ const app = createApp({
         return
       }
 
-      // FileReader → ファイルの中身をテキストとして読み込む道具
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const content = e.target.result
-        try {
-          if (file.name.endsWith('.json')) {
-            this.importFromJSON(content)
-          } else if (file.name.endsWith('.csv')) {
-            this.importFromCSV(content)
+      // JSONはUTF-8固定で読み込む
+      if (file.name.endsWith('.json')) {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          try {
+            this.importFromJSON(e.target.result)
+          } catch (err) {
+            this.showToast(this.t.toastImportError)
+            console.log('取込エラー:', err)
           }
-        } catch (err) {
-          this.showToast(this.t.toastImportError)
-          console.log('取込エラー:', err)
+          event.target.value = ''
         }
-        // 同じファイルを再度選択できるようにリセット
-        event.target.value = ''
+        reader.readAsText(file, 'UTF-8')
+        return
       }
-      // テキストとして読み込む（UTF-8）
-      reader.readAsText(file, 'UTF-8')
+
+      // CSVはまずバイナリで読んで文字コードを判定する
+      const sniffer = new FileReader()
+      sniffer.onload = (e) => {
+        const bytes = new Uint8Array(e.target.result)
+
+        // BOM付きUTF-8チェック（先頭3バイトが EF BB BF）
+        const isUtf8Bom = bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF
+
+        // BOM付きUTF-8ならUTF-8、そうでなければShift-JISで読む
+        const encoding = isUtf8Bom ? 'UTF-8' : 'Shift-JIS'
+
+        const reader = new FileReader()
+        reader.onload = (e2) => {
+          try {
+            this.importFromCSV(e2.target.result)
+          } catch (err) {
+            this.showToast(this.t.toastImportError)
+            console.log('取込エラー:', err)
+          }
+          event.target.value = ''
+        }
+        reader.readAsText(file, encoding)
+      }
+      sniffer.readAsArrayBuffer(file)
     },
-
-    // JSONから取り込む
-    importFromJSON(content) {
-      const raw = JSON.parse(content)
-      if (!Array.isArray(raw)) throw new Error('配列ではありません')
-
-      const data = raw
-        .map(item => {
-          // タスク：120文字で切る
-          const taskText = (item.text || '').slice(0, 120)
-
-          // カテゴリ：20文字で切る
-          const category = (item.category || '').slice(0, 20)
-
-          // 期日：yyyy-mm-dd形式チェック
-          const rawDate = item.dueDate || ''
-          const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : ''
-
-          // 完了：true のみtrue、それ以外はfalse
-          const done = item.done === true
-
-          return { taskText, category, dueDate, done }
-        })
-        .filter(row => row.taskText.trim()) // タスクが空白の行はスキップ
-        .map(row => ({
-          id:        crypto.randomUUID(),
-          text:      row.taskText,
-          category:  row.category,
-          dueDate:   row.dueDate,
-          done:      row.done,
-          createdAt: new Date().toISOString()
-        }))
-
-      this.applyImport(data)
-    }, 
 
     // csvから取り込む
     importFromCSV(content) {
