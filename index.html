@@ -944,12 +944,120 @@ function parseCSVLine(line) {
   return result
 }
 
+// =============================================
+// 様々な日付形式を yyyy-mm-dd に統一する関数
+// 対応形式：
+//   yyyy-mm-dd（元の形式）
+//   yyyy/m/d, yyyy/mm/dd
+//   m/d/yyyy（英語Excel）
+//   yyyy年m月d日
+// =============================================    
+function normalizeDate(str) {
+  if (!str || !str.trim()) return ''
+  const s = str.trim()
+
+  // すでに yyyy-mm-dd 形式ならそのまま返す
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+
+  let y, m, d
+
+  // yyyy/m/d または yyyy/mm/dd
+  const slashYMD = s.split('/')
+  if (slashYMD.length === 3 && slashYMD[0].length === 4) {
+    y = parseInt(slashYMD[0])
+    m = parseInt(slashYMD[1])
+    d = parseInt(slashYMD[2])
+  }
+
+  // m/d/yyyy（英語Excel形式）
+  else if (slashYMD.length === 3 && slashYMD[2].length === 4) {
+    m = parseInt(slashYMD[0])
+    d = parseInt(slashYMD[1])
+    y = parseInt(slashYMD[2])
+  }
+
+  // yyyy年m月d日
+  else {
+    const kanji = s.replace('年', '/').replace('月', '/').replace('日', '').split('/')
+    if (kanji.length === 3 && kanji[0].length === 4) {
+      y = parseInt(kanji[0])
+      m = parseInt(kanji[1])
+      d = parseInt(kanji[2])
+    }
+  }
+
+  // 年月日が取れなかったら空文字を返す
+  if (!y || !m || !d) return ''
+
+  // 日付として有効かチェック（例：2月30日などを弾く）
+  const date = new Date(y, m - 1, d)
+  if (
+    date.getFullYear() !== y ||
+    date.getMonth() + 1 !== m ||
+    date.getDate() !== d
+  ) return ''
+
+  // yyyy-mm-dd 形式に整える（月・日を2桁にする）
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+} 
 
 // =============================================
-// Vueアプリ本体
-// createApp → アプリを作る
-// app変数に入れる → 後でコンポーネントを登録するため
-// =============================================
+// 様々な日付形式を yyyy-mm-dd に統一する関数
+// 対応形式：
+//   yyyy-mm-dd（元の形式）
+//   yyyy/m/d, yyyy/mm/dd
+//   m/d/yyyy（英語Excel）
+//   yyyy年m月d日
+// =============================================    
+function normalizeDate(str) {
+  if (!str || !str.trim()) return ''
+  const s = str.trim()
+
+  // すでに yyyy-mm-dd 形式ならそのまま返す
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+
+  let y, m, d
+
+  // yyyy/m/d または yyyy/mm/dd
+  const slashYMD = s.split('/')
+  if (slashYMD.length === 3 && slashYMD[0].length === 4) {
+    y = parseInt(slashYMD[0])
+    m = parseInt(slashYMD[1])
+    d = parseInt(slashYMD[2])
+  }
+
+  // m/d/yyyy（英語Excel形式）
+  else if (slashYMD.length === 3 && slashYMD[2].length === 4) {
+    m = parseInt(slashYMD[0])
+    d = parseInt(slashYMD[1])
+    y = parseInt(slashYMD[2])
+  }
+
+  // yyyy年m月d日
+  else {
+    const kanji = s.replace('年', '/').replace('月', '/').replace('日', '').split('/')
+    if (kanji.length === 3 && kanji[0].length === 4) {
+      y = parseInt(kanji[0])
+      m = parseInt(kanji[1])
+      d = parseInt(kanji[2])
+    }
+  }
+
+  // 年月日が取れなかったら空文字を返す
+  if (!y || !m || !d) return ''
+
+  // 日付として有効かチェック（例：2月30日などを弾く）
+  const date = new Date(y, m - 1, d)
+  if (
+    date.getFullYear() !== y ||
+    date.getMonth() + 1 !== m ||
+    date.getDate() !== d
+  ) return ''
+
+  // yyyy-mm-dd 形式に整える（月・日を2桁にする）
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+} 
+
 const app = createApp({
 
   // ── データ（アプリが持つ変数） ──
@@ -1619,6 +1727,40 @@ const app = createApp({
       sniffer.readAsArrayBuffer(file)
     },
 
+  // JSONから取り込む
+    importFromJSON(content) {
+      const raw = JSON.parse(content)
+      if (!Array.isArray(raw)) throw new Error('配列ではありません')
+
+      const data = raw
+        .map(item => {
+          // タスク：120文字で切る
+          const taskText = (item.text || '').slice(0, 120)
+
+          // カテゴリ：20文字で切る
+          const category = (item.category || '').slice(0, 20)
+
+          // 期日：normalizeDate → いろんな形式を yyyy-mm-dd に統一してくれる
+          const dueDate = normalizeDate(item.dueDate || '')
+
+          // 完了：true のみtrue、それ以外はfalse
+          const done = item.done === true
+
+          return { taskText, category, dueDate, done }
+        })
+        .filter(row => row.taskText.trim()) // タスクが空白の行はスキップ
+        .map(row => ({
+          id:        crypto.randomUUID(),
+          text:      row.taskText,
+          category:  row.category,
+          dueDate:   row.dueDate,
+          done:      row.done,
+          createdAt: new Date().toISOString()
+        }))
+
+      this.applyImport(data)
+    }, 
+
     // csvから取り込む
     importFromCSV(content) {
       const text = content.replace(/^\uFEFF/, '')
@@ -1636,7 +1778,9 @@ const app = createApp({
 
           // 期日：yyyy-mm-dd形式チェック
           const rawDate = cols[2] || ''
-          const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : ''
+
+          // normalizeDate → いろんな形式を yyyy-mm-dd に統一してくれる
+          const dueDate = normalizeDate(cols[2] || '')
 
           // 完了：'true' のみtrue、それ以外はfalse
           const done = cols[3] === 'true'
@@ -1657,7 +1801,7 @@ const app = createApp({
 
       this.applyImport(data)
     },
-
+    
     // 取り込んだデータをtodosに反映する（上書きか追加かを選ぶ）
     applyImport(data) {
       // 1回目：上書きモードで取り込むか？
@@ -1680,26 +1824,26 @@ const app = createApp({
     },
   },
 
-
     // ── ウォッチャー（データの変化を監視する） ──
     watch: {
-      // todosが変わったら自動でlocalStorageに保存する
-      // deep: true → 配列の中身の変化も検知する
-      todos: {
-        deep: true,
-        handler() {
-          try {
-            // タスクをJSON文字列に変換してlocalStorageに保存する
-            localStorage.setItem('todos', JSON.stringify(this.todos))
-          } catch (e) {
-            // プライベートブラウジングや容量オーバーのときはここに来る
-            // アプリはそのまま動かし続ける（クラッシュさせない）
-            // コンソールとトーストで通知
-            console.log(this.t.saveError, e)
-            this.showToast(this.t.saveError)
-          }
+      
+    // todosが変わったら自動でlocalStorageに保存する
+    // deep: true → 配列の中身の変化も検知する
+    todos: {
+      deep: true,
+      handler() {
+        try {
+          // タスクをJSON文字列に変換してlocalStorageに保存する
+          localStorage.setItem('todos', JSON.stringify(this.todos))
+        } catch (e) {
+          // プライベートブラウジングや容量オーバーのときはここに来る
+          // アプリはそのまま動かし続ける（クラッシュさせない）
+          // コンソールとトーストで通知
+          console.log(this.t.saveError, e)
+          this.showToast(this.t.saveError)
         }
-      },  
+      }
+    },  
 
     // グループ表示が切り替わったとき
     groupBy(newVal) {
@@ -1717,7 +1861,6 @@ const app = createApp({
       this.$nextTick(() => { this.updateTopHeight() })
     }, 
   },
-
 
   // ── マウント（ページが読み込まれたとき1回だけ実行される） ──
   mounted() {
