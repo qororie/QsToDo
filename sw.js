@@ -3,7 +3,7 @@
 // キャッシュの名前（バージョンを変えると古いキャッシュが消える）
 // ファイルを更新したときは todo-cache-v1をv2, v3 と数字を上げて書き換える
 // =============================================
-const CACHE_NAME = 'todo-cache-v2'
+const CACHE_NAME = 'todo-cache-v3'
 
 // キャッシュするファイルの一覧
 const FILES_TO_CACHE = [
@@ -56,4 +56,9 @@ self.addEventListener('fetch', event => {
       return fetch(event.request)
     })
   )
+})
+
+// 新しいService Workerがあるとき自動でページを更新する
+self.addEventListener('message', event => {
+  if (event.data === 'skipWaiting') self.skipWaiting()
 })

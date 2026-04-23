@@ -72,8 +72,6 @@
     --f: #191919;
     --g: #F5F2E4;
   }
-
-
     /* =============================================
        リセット・基本設定
        ============================================= */
@@ -89,7 +87,6 @@
       padding: 0 16px 90px;  /* 上の余白だけ消す */
       font-family: sans-serif;
     }
-
 
     /* =============================================
        上部固定エリア
@@ -109,7 +106,7 @@
       z-index: 100;
     }
 
-    /* 言語切替と入出力ボタンを1行に */
+    /* 更新・言語切替と入出力ボタンを1行に */
     .top-actions {
       display: flex;
       justify-content: space-between;
@@ -117,7 +114,15 @@
       margin-bottom: 8px;
     }
 
-    /* 言語切替（左側） */
+    /* 更新・言語切替（左側） */
+
+    /* 更新ボタンのアイコンサイズ */
+    .reload-icon {
+      width: 30px;   /* ← この数字を変えてサイズ調整 */
+      height: 30px;
+      display: block;
+    }
+
     .lang-switch { display: flex; gap: 8px; }
 
     /* 入出力ボタン（右側） */
@@ -690,8 +695,9 @@
         <!-- 言語切替（左）・入出力ボタン（右）を1行に -->
         <div class="top-actions">
 
-          <!-- 言語切替ボタン -->
+          <!-- 言語切替･更新(キャッシュ)ボタン -->
           <div class="lang-switch">
+            <img src="./icon.svg" alt="更新" class="reload-icon">
             <button type="button" @click="currentLang = 'ja'" :class="{ active: currentLang === 'ja' }">ja</button>
             <button type="button" @click="currentLang = 'en'" :class="{ active: currentLang === 'en' }">en</button>
           </div>
@@ -1824,9 +1830,9 @@ const app = createApp({
     },
   },
 
-    // ── ウォッチャー（データの変化を監視する） ──
-    watch: {
-      
+  // ── ウォッチャー（データの変化を監視する） ──
+  watch: {
+
     // todosが変わったら自動でlocalStorageに保存する
     // deep: true → 配列の中身の変化も検知する
     todos: {
@@ -1850,9 +1856,11 @@ const app = createApp({
       if (newVal === 'none') {
         this.openGroups = []
       } else {
-        // 全グループを開いた状態にする
-        this.openGroups = this.groupedTodos.map(g => g.label)
+        // 全グループを開いた状態にする（現在はコメントアウトで封印し閉じたVer）
+        // this.openGroups = this.groupedTodos.map(g => g.label)// 
       }
+      // ← 表示切替のたびに一番上にスクロールする
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     },
 
     // フォームの開閉で上部の高さが変わるので測り直す
@@ -1887,7 +1895,6 @@ const app = createApp({
 
     // ページ読み込み時に高さを測る
     this.$nextTick(() => {
-      this.openGroups = this.groupedTodos.map(g => g.label)
       this.updateTopHeight()
     }) 
 
@@ -1938,8 +1945,26 @@ app.component('todo-card', {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       return due < today
-    }
-  },
+    },
+  
+    // アプリを強制的に最新版に更新する
+    reloadApp() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then(reg => {
+          if (reg) {
+            // Service Workerに新しいバージョンがあれば適用する
+            reg.update().then(() => {
+              window.location.reload()
+            })
+          } else {
+            window.location.reload()
+          }
+        })
+      } else {
+        window.location.reload()
+      }
+    },
+ },
 
   template: `
 
