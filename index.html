@@ -1657,7 +1657,7 @@ const app = createApp({
       })
       // \uFEFF → BOM（ExcelでCSVを開くときの文字化けを防ぐ）
       const csv = '\uFEFF' + rows.join('\n')
-      this.downloadFile(csv, 'todos.csv', 'text/csv;charset=utf-8')
+      this.downloadFile(csv, `todos-${this.getDateStamp()}.csv`, 'text/csv;charset=utf-8')
       this.showToast(this.t.toastExported)    
     },
 
@@ -1670,7 +1670,7 @@ const app = createApp({
 
       // JSON.stringify(データ, null, 2) → インデント付きのJSON文字列に変換
       const json = JSON.stringify(this.todos, null, 2)
-      this.downloadFile(json, 'todos.json', 'application/json')
+      this.downloadFile(json, `todos-${this.getDateStamp()}.json`, 'application/json')
       this.showToast(this.t.toastExported)
     },
 
@@ -1828,8 +1828,37 @@ const app = createApp({
       // どちらもキャンセル → 取込をやめる
       this.showToast(this.t.toastImportCancelled)
     },
-  },
 
+    // アプリを強制的に最新版に更新する
+    reloadApp() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then(reg => {
+          if (reg) {
+            // Service Workerに新しいバージョンがあれば適用する
+            reg.update().then(() => {
+              window.location.reload()
+            })
+          } else {
+            window.location.reload()
+          }
+        })
+      } else {
+        window.location.reload()
+      }
+    },
+
+    // 現在日時を "mmddHHMM" 形式で返す
+    getDateStamp() {
+    const now = new Date()
+    const mm = String(now.getMonth() + 1).padStart(2, '0')  // 月
+    const dd = String(now.getDate()).padStart(2, '0')       // 日
+    const HH = String(now.getHours()).padStart(2, '0')      // 時
+    const MM = String(now.getMinutes()).padStart(2, '0')    // 分
+    return `${mm}${dd}${HH}${MM}`
+  },
+ 
+  },
+  
   // ── ウォッチャー（データの変化を監視する） ──
   watch: {
 
@@ -1936,35 +1965,19 @@ app.component('todo-card', {
   },
 
   methods: {
-    // 期日が今日より前かどうか判定する（期限切れ → タグを赤くする）
-    isOverdue(dateStr) {
-      if (!dateStr) return false
-      const [y, m, d] = dateStr.split('-').map(Number)
-      const due = new Date(y, m - 1, d)
-      due.setHours(0, 0, 0, 0)
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      return due < today
-    },
-  
-    // アプリを強制的に最新版に更新する
-    reloadApp() {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistration().then(reg => {
-          if (reg) {
-            // Service Workerに新しいバージョンがあれば適用する
-            reg.update().then(() => {
-              window.location.reload()
-            })
-          } else {
-            window.location.reload()
-          }
-        })
-      } else {
-        window.location.reload()
-      }
-    },
- },
+  // 期日が今日より前かどうか判定する（期限切れ → タグを赤くする）
+  isOverdue(dateStr) {
+    if (!dateStr) return false
+    const [y, m, d] = dateStr.split('-').map(Number)
+    const due = new Date(y, m - 1, d)
+    due.setHours(0, 0, 0, 0)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return due < today
+  },
+
+
+  },
 
   template: `
 
@@ -2111,7 +2124,6 @@ app.component('todo-card', {
     </div>
   `
 }) // todo-card ここまで
-
 
 // アプリを「id="app"」の要素に表示する
 app.mount('#app')
