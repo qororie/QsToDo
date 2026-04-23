@@ -118,10 +118,16 @@
 
     /* 更新ボタンのアイコンサイズ */
     .reload-icon {
-      width: 30px;   /* ← この数字を変えてサイズ調整 */
-      height: 30px;
+      width: 18px;   /* ← この数字を変えてサイズ調整 */
+      height: 18px;
       display: block;
     }
+
+    /* ボタン自体の余白を小さくする */
+    .reload-btn {
+      padding: 2px 4px;
+    }
+    
 
     .lang-switch { display: flex; gap: 8px; }
 
@@ -706,7 +712,9 @@
 
           <!-- 言語切替･更新(キャッシュ)ボタン -->
           <div class="lang-switch">
-            <img src="./icon.svg" alt="更新" class="reload-icon">
+            <button type="button" class="io-btn" @click="reloadApp">
+              <img src="./icon.svg" alt="更新" class="reload-icon">
+            </button>
             <button type="button" @click="currentLang = 'ja'" :class="{ active: currentLang === 'ja' }">ja</button>
             <button type="button" @click="currentLang = 'en'" :class="{ active: currentLang === 'en' }">en</button>
           </div>
