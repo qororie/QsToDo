@@ -381,6 +381,11 @@
     .todo-card.overdue {
       border-color: var(--a); 
     }
+    /* 完了済みカードは枠を薄くする（期限切れより優先される） */
+    .todo-card.done {
+      border-color: var(--e);
+      opacity: 0.4; /* 薄くして目立たせない */
+    }
     /* 編集中のカードは枠をつける */
     .todo-card.editing {
       border: 1px solid var(--e);
@@ -443,21 +448,25 @@
       gap: 8px;
     }
 
+    /* タスクの標準文字装飾 */
     .todo-main-text {
       font-size: 15px;
       color: var(--f);
       word-break: break-word;
       line-height: 1.4;
     }
+     /* 完了タスクの標準文字装飾 */
     .todo-main-text.done {
       text-decoration: line-through;
       color: var(--e);
     }
-
-    /* 完了済みカードは枠を薄くする（期限切れより優先される） */
-    .todo-card.done {
-      border-color: var(--e);
-      opacity: 0.4; /* 薄くして目立たせない */
+    /* 期限切れのカードのテキストの文字色 */
+    .todo-card.overdue .todo-main-text {
+      color: var(--a);
+    }
+    /* 期限切れ＋完了済みは完了の文字色 */
+    .todo-card.overdue.done .todo-main-text {
+      color: var(--e);
     }
 
     /* カテゴリ・期日のタグエリア */
