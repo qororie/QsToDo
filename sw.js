@@ -48,23 +48,18 @@ self.addEventListener('activate', event => {
 })
 
 // ── フェッチ時（ページがファイルを要求するたびに実行） ──
-// キャッシュにあればキャッシュから、なければネットから取得する
 self.addEventListener('fetch', event => {
   // 外部ドメイン（Google Fonts など）はService Worker を経由させない
   const url = new URL(event.request.url)
   if (url.origin !== self.location.origin) return
 
   event.respondWith(
-    caches.match(event.request).then(response => {
-      // キャッシュにあればそれを返す
-      if (response) return response
-      // キャッシュにないときはネットから取得する
-      return fetch(event.request)
-    })
+    fetch(event.request)
+      .then(response => {
+        return response
+      })
+      .catch(() => {
+        return caches.match(event.request)
+      })
   )
-})
-
-// 新しいService Workerがあるとき自動でページを更新する
-self.addEventListener('message', event => {
-  if (event.data === 'skipWaiting') self.skipWaiting()
 })
