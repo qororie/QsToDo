@@ -162,6 +162,31 @@
       border-color: var(--e);
     }
 
+    /* 400px以下のときだけ中央1列に並べる */
+    @media (max-width: 400px) {
+      .top-actions {
+        justify-content: center; /* 中央寄せ */
+        gap: 6px;                /* ボタン間隔を統一 */
+      }
+
+      /* 左側・右側のgapも統一する */
+      .lang-switch { gap: 6px; }
+      .io-bar { gap: 6px; }
+
+      /* ボタンのpaddingを少し詰める */
+      .lang-switch button,
+      .io-btn,
+      .io-import-label {
+        padding: 3px 6px;
+      }
+
+      /* アイコンサイズを少し小さくする */
+      .lang-switch .material-symbols-outlined,
+      .io-bar .material-symbols-outlined {
+        font-size: 16px;
+      }
+    }
+
     /* 検索欄と＋ボタンを横に並べる行 */
     .top-row {
       display: flex;
@@ -674,6 +699,10 @@
     }
     .rotate-message .rotate-icon { font-size: 48px; }
   }
+
+  /* Vue マウント前に {{ }} が見えないようにする */
+  [v-cloak] { display: none; }
+
   </style>
 </head>
 
@@ -697,7 +726,7 @@
         　├── .toast（トースト通知）
         　└── .bottom-bar（下部固定）
   ══════════════════════════════════════ -->
-  <div id="app">
+  <div id="app" v-cloak>
 
     <!-- ↓ padding-top をVueで動的に変える（ヘッダーの高さ + 余白12px）-->
     <div class="container" :style="{ paddingTop: (topHeight + 12) + 'px' }">
@@ -721,25 +750,28 @@
 
           <!-- CSV・JSON出力・取込ボタン -->
           <div class="io-bar">
-            <button type="button" class="io-btn" @click="exportCSV">CSV</button>
-            <button type="button" class="io-btn" @click="exportJSON">JSON</button>
+            <button type="button" class="io-btn" @click="exportCSV">
+              <span class="material-symbols-outlined" translate="no">csv</span>
+            </button>
+            <button type="button" class="io-btn" @click="exportJSON">
+              <span class="material-symbols-outlined" translate="no">file_json</span>
+            </button>
             <!-- ？ボタン：フォーマット説明を表示するだけ -->
-            <button type="button" class="io-btn" @click="showImportInfo">?</button>
-
-            
-          <!-- 取込ボタン：直接ファイル選択を開く -->
-          <!-- labelでinputを包む → クリックが直接inputに伝わる -->
-          <label class="io-btn io-import-label">
-            {{ t.importFile }}
-            <input
-              type="file"
-              ref="importFile"
-              accept=".csv,.json"
-              style="display:none"
-              @change="importFile"
-            >
-          </label>
-        </div>
+            <button type="button" class="io-btn" @click="showImportInfo">
+              <span class="material-symbols-outlined" translate="no">help</span>
+            </button>
+            <!-- 出力ボタン labelでinputを包む → クリックが直接inputに伝わる -->
+            <label class="io-btn io-import-label">
+              <span class="material-symbols-outlined" translate="no">download</span>
+              <input
+                type="file"
+                ref="importFile"
+                accept=".csv,.json"
+                style="display:none"
+                @change="importFile"
+              >
+            </label>          <!-- 取込ボタン：直接ファイル選択を開く -->
+          </div>
 
         </div><!-- /.top-actions -->
 
@@ -767,8 +799,7 @@
           {{ filteredTodos.length }}{{ t.statusOf }}{{ todos.length }}{{ t.statusItems }}
         </div>
 
-      </div><!-- /.top-fixed -->
-
+      </div><!-- /.top-fixed --伊p
 
       <!-- ══════════════════════════════════════
           タスク追加フォーム
@@ -928,7 +959,7 @@
   </div><!-- /#app -->
 
 <!-- VUEを読み込む。急に動かなくならないようバージョンを固定 ══ -->
-<script src="https://unpkg.com/vue@3.5.13/dist/vue.global.js"></script>
+<script src="./vue.global.js"></script>
 <script>
 
 // VueからcreateAppを取り出す
@@ -2065,6 +2096,18 @@ app.component('todo-card', {
 
       <!-- 編集モード（編集中のとき） -->
       <div v-else class="edit-inputs" @click.stop>
+
+        <!-- @change → チェックが変わったとき保存して編集モードを閉じる -->
+          <div class="edit-check-row">
+            <input
+              type="checkbox"
+              class="cb"
+              v-model="todo.done"
+              @change="$emit('save')"
+              @click.stop
+            >
+            <span class="edit-check-label">{{ todo.done ? '完了' : '未完了' }}</span>
+          </div>
 
         <!-- タスク入力欄 最大文字数120-->
         <!-- todo.text.slice(0, 120) WinIMEコンポジションバグ対策 120文字制限が聞かない時用の対策-->
